@@ -19,3 +19,4 @@ C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechani
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX.genruntimeconfig.cache
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\ref\mechaniX.dll
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX.csproj.Up2Date
+C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX.sourcelink.json

@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
@@ -8,13 +9,17 @@ namespace mechaniX;
 
 public partial class MainWindow : Window
 {
+    private readonly ObservableCollection<ForceEntry> forces = new();
     private double? span;
-    private double? force;
-    private double? forcePosition;
+    private double reactionAx;
+    private double reactionAy;
+    private double reactionBy;
 
     public MainWindow()
     {
         InitializeComponent();
+        ForceList.ItemsSource = forces;
+        forces.Add(new ForceEntry("Kraft 1", "2", "10", "-90"));
     }
 
     private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -25,6 +30,37 @@ public partial class MainWindow : Window
     private void CalculateButton_Click(object sender, RoutedEventArgs e)
     {
         Calculate();
+    }
+
+    private void AddForceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (forces.Count >= 5)
+        {
+            ErrorText.Text = "Es können höchstens fünf Kräfte eingegeben werden.";
+            return;
+        }
+
+        var position = TryReadPositiveValue(SpanInput.Text, out var currentSpan)
+            ? Format(currentSpan / 2)
+            : "0";
+        forces.Add(new ForceEntry($"Kraft {forces.Count + 1}", position, "10", "-90"));
+        ErrorText.Text = string.Empty;
+    }
+
+    private void RemoveForceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (forces.Count <= 1)
+        {
+            ErrorText.Text = "Mindestens eine Kraft muss im System bleiben.";
+            return;
+        }
+
+        if (sender is Button { Tag: ForceEntry entry })
+        {
+            forces.Remove(entry);
+            UpdateForceLabels();
+            ErrorText.Text = string.Empty;
+        }
     }
 
     private void DiagramCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -40,35 +76,77 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (!TryReadPositiveValue(ForceInput.Text, out var currentForce))
+        if (forces.Count is < 1 or > 5)
         {
-            ShowInputError("Die Einzelkraft F muss eine Zahl größer als 0 sein.");
+            ShowInputError("Das System muss zwischen einer und fünf Kräften enthalten.");
             return;
         }
 
-        if (!TryReadNonNegativeValue(PositionInput.Text, out var currentPosition))
+        var parsedForces = new List<AppliedForce>(forces.Count);
+        for (var index = 0; index < forces.Count; index++)
         {
-            ShowInputError("Die Position x muss eine Zahl ab 0 sein.");
-            return;
+            var entry = forces[index];
+            if (!TryReadNonNegativeValue(entry.Position, out var position))
+            {
+                ShowInputError($"Die Position x von Kraft {index + 1} muss eine Zahl ab 0 sein.");
+                return;
+            }
+
+            if (position > currentSpan)
+            {
+                ShowInputError($"Die Position x von Kraft {index + 1} muss zwischen 0 und l liegen.");
+                return;
+            }
+
+            if (!TryReadPositiveValue(entry.Magnitude, out var magnitude))
+            {
+                ShowInputError($"Die Kraft F von Kraft {index + 1} muss größer als 0 sein.");
+                return;
+            }
+
+            if (!TryReadSignedValue(entry.Angle, out var angle))
+            {
+                ShowInputError($"Der Winkel von Kraft {index + 1} muss eine gültige Zahl sein.");
+                return;
+            }
+
+            var radians = Math.IEEERemainder(angle, 360) * (Math.PI / 180);
+            var horizontal = magnitude * Math.Cos(radians);
+            var vertical = magnitude * Math.Sin(radians);
+            if (!double.IsFinite(horizontal) || !double.IsFinite(vertical))
+            {
+                ShowInputError($"Die Komponenten von Kraft {index + 1} sind zu groß.");
+                return;
+            }
+
+            parsedForces.Add(new AppliedForce(position, magnitude, angle, horizontal, vertical));
         }
 
-        if (currentPosition > currentSpan)
+        var totalHorizontal = parsedForces.Sum(applied => applied.Horizontal);
+        var totalVertical = parsedForces.Sum(applied => applied.Vertical);
+        var totalMomentOverSpan = parsedForces.Sum(applied =>
+            (applied.Position / currentSpan) * applied.Vertical);
+        var currentReactionBy = -totalMomentOverSpan;
+        var currentReactionAy = -totalVertical - currentReactionBy;
+        var currentReactionAx = -totalHorizontal;
+        if (!double.IsFinite(currentReactionAx) || !double.IsFinite(currentReactionAy) ||
+            !double.IsFinite(currentReactionBy))
         {
-            ShowInputError("Die Position x muss zwischen A und B liegen (0 ≤ x ≤ l).");
+            ShowInputError("Die resultierenden Auflagerkräfte sind zu groß.");
             return;
         }
 
         span = currentSpan;
-        force = currentForce;
-        forcePosition = currentPosition;
-
-        var reactionA = currentForce * ((currentSpan - currentPosition) / currentSpan);
-        var reactionB = currentForce * (currentPosition / currentSpan);
-        ReactionAOutput.Text = $"R_A = {Format(reactionA)} kN";
-        ReactionBOutput.Text = $"R_B = {Format(reactionB)} kN";
+        reactionAx = currentReactionAx;
+        reactionAy = currentReactionAy;
+        reactionBy = currentReactionBy;
+        ReactionAxOutput.Text = $"Aₓ = {Format(reactionAx)}";
+        ReactionAyOutput.Text = $"Aᵧ = {Format(reactionAy)}";
+        ReactionBOutput.Text = $"Bᵧ = {Format(reactionBy)}";
         EquilibriumOutput.Text =
-            $"Kontrolle: R_A + R_B = {Format(reactionA + reactionB)} kN = F. " +
-            "Beide Auflagerreaktionen wirken nach oben.";
+            $"Kontrolle: ΣFₓ = {Format(reactionAx + totalHorizontal)} kN, " +
+            $"ΣFᵧ = {Format(reactionAy + reactionBy + totalVertical)} kN. " +
+            "Vorzeichen: positiv nach rechts/oben.";
         ErrorText.Text = string.Empty;
         DrawDiagram();
     }
@@ -76,10 +154,9 @@ public partial class MainWindow : Window
     private void ShowInputError(string message)
     {
         span = null;
-        force = null;
-        forcePosition = null;
-        ReactionAOutput.Text = "—";
-        ReactionBOutput.Text = "—";
+        ReactionAxOutput.Text = "Aₓ = —";
+        ReactionAyOutput.Text = "Aᵧ = —";
+        ReactionBOutput.Text = "Bᵧ = —";
         EquilibriumOutput.Text = "Bitte Eingaben prüfen und erneut berechnen.";
         ErrorText.Text = message;
         DrawDiagram();
@@ -92,11 +169,15 @@ public partial class MainWindow : Window
 
     private static bool TryReadNonNegativeValue(string text, out double value)
     {
+        return TryReadSignedValue(text, out value) && value >= 0;
+    }
+
+    private static bool TryReadSignedValue(string text, out double value)
+    {
         var normalized = text.Trim().Replace(',', '.');
-        return double.TryParse(normalized, NumberStyles.AllowDecimalPoint,
+        return double.TryParse(normalized, NumberStyles.Float,
                    CultureInfo.InvariantCulture, out value)
-               && double.IsFinite(value)
-               && value >= 0;
+               && double.IsFinite(value);
     }
 
     private static string Format(double value)
@@ -104,11 +185,19 @@ public partial class MainWindow : Window
         return value.ToString("0.###", CultureInfo.GetCultureInfo("de-DE"));
     }
 
+    private void UpdateForceLabels()
+    {
+        for (var index = 0; index < forces.Count; index++)
+        {
+            forces[index].Label = $"Kraft {index + 1}";
+        }
+        ForceList.Items.Refresh();
+    }
+
     private void DrawDiagram()
     {
         DiagramCanvas.Children.Clear();
-        if (span is not double currentSpan || force is not double currentForce ||
-            forcePosition is not double currentPosition)
+        if (span is not double currentSpan)
         {
             return;
         }
@@ -119,29 +208,60 @@ public partial class MainWindow : Window
             return;
         }
 
-        const double left = 44;
-        const double rightMargin = 44;
-        const double beamY = 100;
+        const double left = 56;
+        const double rightMargin = 56;
+        const double beamY = 145;
+        const double arrowLength = 42;
         var right = width - rightMargin;
         var beamWidth = right - left;
-        var loadX = left + beamWidth * (currentPosition / currentSpan);
 
         AddLine(left, beamY, right, beamY, "#172B4D", 5);
         DrawPinSupport(left, beamY);
         DrawRollerSupport(right, beamY);
-        AddText("A", left - 5, beamY + 27, 16, "#24344D", true);
-        AddText("B", right - 5, beamY + 34, 16, "#24344D", true);
+        AddText("A", left - 5, beamY + 28, 16, "#24344D", true);
+        AddText("B", right - 5, beamY + 36, 16, "#24344D", true);
 
-        AddArrow(loadX, beamY - 55, loadX, beamY - 5, "#D64545", 3);
-        AddText($"F = {Format(currentForce)} kN", loadX - 45, beamY - 82, 110, "#B42318", true);
-        AddArrow(left, beamY + 89, left, beamY + 43, "#2868C7", 2.5);
-        AddArrow(right, beamY + 89, right, beamY + 43, "#2868C7", 2.5);
-        AddText("R_A", left + 8, beamY + 60, 42, "#2868C7", true);
-        AddText("R_B", right - 50, beamY + 60, 42, "#2868C7", true);
+        for (var index = 0; index < forces.Count; index++)
+        {
+            if (!TryReadNonNegativeValue(forces[index].Position, out var position) ||
+                !TryReadPositiveValue(forces[index].Magnitude, out var magnitude) ||
+                !TryReadSignedValue(forces[index].Angle, out var angle) ||
+                position > currentSpan)
+            {
+                continue;
+            }
 
-        var dimensionY = beamY + 112;
-        AddDimension(left, loadX, dimensionY, $"x = {Format(currentPosition)} m");
-        AddDimension(left, right, dimensionY + 26, $"l = {Format(currentSpan)} m");
+            var radians = Math.IEEERemainder(angle, 360) * (Math.PI / 180);
+            var loadX = left + beamWidth * (position / currentSpan);
+            var endX = loadX + arrowLength * Math.Cos(radians);
+            var endY = beamY - arrowLength * Math.Sin(radians);
+            var color = index % 2 == 0 ? "#D64545" : "#D97706";
+            AddArrow(loadX, beamY, endX, endY, color, 2.5);
+            AddText($"F{index + 1} {Format(magnitude)} kN · {Format(angle)}°",
+                endX - 56, endY - 22 - (index % 2) * 15, 112, color, true);
+        }
+
+        DrawReaction(left, beamY, reactionAx, reactionAy, true, "#2868C7");
+        DrawReaction(right, beamY, 0, reactionBy, false, "#2868C7");
+        AddText("Aₓ, Aᵧ", left - 24, beamY + 48, 62, "#2868C7", true);
+        AddText("Bᵧ (nur vertikal)", right - 76, beamY + 55, 112, "#2868C7", true);
+        AddDimension(left, right, beamY + 91, $"l = {Format(currentSpan)} m");
+    }
+
+    private void DrawReaction(double x, double y, double horizontal, double vertical,
+        bool drawHorizontal, string color)
+    {
+        if (drawHorizontal && Math.Abs(horizontal) > 1e-10)
+        {
+            var direction = Math.Sign(horizontal);
+            AddArrow(x, y, x + direction * 34, y, color, 2);
+        }
+
+        if (Math.Abs(vertical) > 1e-10)
+        {
+            var direction = Math.Sign(vertical);
+            AddArrow(x, y, x, y - direction * 34, color, 2);
+        }
     }
 
     private void DrawPinSupport(double x, double y)
@@ -182,7 +302,7 @@ public partial class MainWindow : Window
         AddLine(start, y, end, y, "#8A97A9", 1);
         AddLine(start, y - 5, start, y + 5, "#8A97A9", 1);
         AddLine(end, y - 5, end, y + 5, "#8A97A9", 1);
-        AddText(label, (start + end) / 2 - 48, y + 5, 96, "#66758A", true);
+        AddText(label, (start + end) / 2 - 60, y + 5, 120, "#66758A", true);
     }
 
     private void AddArrow(double startX, double startY, double endX, double endY,
@@ -193,7 +313,7 @@ public partial class MainWindow : Window
         direction.Normalize();
         var perpendicular = new Vector(-direction.Y, direction.X);
         var tip = new Point(endX, endY);
-        var basePoint = tip - direction * 10;
+        var basePoint = tip - direction * 9;
         AddPolygon(tip, basePoint + perpendicular * 4, basePoint - perpendicular * 4, color);
     }
 
@@ -228,7 +348,7 @@ public partial class MainWindow : Window
         {
             Text = text,
             Width = width,
-            FontSize = 12,
+            FontSize = 11,
             FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
             Foreground = new SolidColorBrush(ColorFromHex(color)),
             TextAlignment = TextAlignment.Center
@@ -241,5 +361,27 @@ public partial class MainWindow : Window
     private static Color ColorFromHex(string hex)
     {
         return (Color)ColorConverter.ConvertFromString(hex)!;
+    }
+
+    private sealed class AppliedForce(
+        double position,
+        double magnitude,
+        double angle,
+        double horizontal,
+        double vertical)
+    {
+        public double Position { get; } = position;
+        public double Magnitude { get; } = magnitude;
+        public double Angle { get; } = angle;
+        public double Horizontal { get; } = horizontal;
+        public double Vertical { get; } = vertical;
+    }
+
+    public sealed class ForceEntry(string label, string position, string magnitude, string angle)
+    {
+        public string Label { get; set; } = label;
+        public string Position { get; set; } = position;
+        public string Magnitude { get; set; } = magnitude;
+        public string Angle { get; set; } = angle;
     }
 }
