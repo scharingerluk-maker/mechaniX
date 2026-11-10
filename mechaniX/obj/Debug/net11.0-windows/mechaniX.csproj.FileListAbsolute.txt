@@ -7,7 +7,6 @@ C:\Users\lukas\RiderProjects\mechaniX\mechaniX\bin\Debug\net11.0-windows\mechani
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\MainWindow.g.cs
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\App.g.cs
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX_MarkupCompile.cache
-C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX_MarkupCompile.lref
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\MainWindow.baml
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX.g.resources
 C:\Users\lukas\RiderProjects\mechaniX\mechaniX\obj\Debug\net11.0-windows\mechaniX.GeneratedMSBuildEditorConfig.editorconfig
